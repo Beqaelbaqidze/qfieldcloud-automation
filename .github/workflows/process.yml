@@ -1,0 +1,56 @@
+name: Generate Boundary Features
+
+on:
+  # ── Run every 30 minutes automatically ───────────────────────────────────
+  schedule:
+    - cron: "*/30 * * * *"
+
+  # ── Run manually from GitHub Actions tab (for testing) ───────────────────
+  workflow_dispatch:
+
+jobs:
+  generate-boundaries:
+    name: Download GPKG → generate boundaries → upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      QFIELDCLOUD_USERNAME: ${{ secrets.QFIELDCLOUD_USERNAME }}
+      QFIELDCLOUD_PASSWORD: ${{ secrets.QFIELDCLOUD_PASSWORD }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate secrets
+        run: |
+          if [ -z "$QFIELDCLOUD_USERNAME" ]; then
+            echo "::error::Secret QFIELDCLOUD_USERNAME is not set."
+            exit 1
+          fi
+          if [ -z "$QFIELDCLOUD_PASSWORD" ]; then
+            echo "::error::Secret QFIELDCLOUD_PASSWORD is not set."
+            exit 1
+          fi
+
+      - name: Run boundary generator
+        run: python process_geopackage.py
+
+      - name: Upload processed GPKG as artifact (for inspection)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Surveyor-${{ github.run_id }}
+          path: Surveyor.gpkg
+          retention-days: 7
+          if-no-files-found: warn
