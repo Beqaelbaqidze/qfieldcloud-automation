@@ -1,11 +1,11 @@
 name: Generate Boundary Features
 
 on:
-  # ── Run every 30 minutes automatically ───────────────────────────────────
+  # ── Run every 5 minutes — picks up QField pushes quickly ─────────────────
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
 
-  # ── Run manually from GitHub Actions tab (for testing) ───────────────────
+  # ── Run manually from GitHub Actions tab ─────────────────────────────────
   workflow_dispatch:
 
 jobs:
@@ -31,6 +31,13 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Restore last-run timestamp cache
+        uses: actions/cache@v4
+        with:
+          path: .last_updated
+          key: last-updated-${{ github.run_id }}
+          restore-keys: last-updated-
 
       - name: Validate secrets
         run: |

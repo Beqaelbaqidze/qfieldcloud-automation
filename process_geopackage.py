@@ -69,6 +69,20 @@ def get_token() -> str:
     return token
 
 
+def get_last_updated(headers: dict) -> str:
+    """
+    Return the project's data_last_updated_at timestamp from QFieldCloud.
+    Used to skip processing when nothing has changed since the last run.
+    """
+    resp = requests.get(
+        f"{API_BASE}/projects/{PROJECT_ID}/",
+        headers=headers,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json().get("data_last_updated_at", "")
+
+
 def download_gpkg(headers: dict) -> None:
     """Stream Surveyor.gpkg from QFieldCloud to disk."""
     url = f"{API_BASE}/files/{PROJECT_ID}/{GPKG_FILENAME}/"
@@ -284,10 +298,22 @@ def generate_boundaries():
 # Entry point
 # ════════════════════════════════════════════════════════════════════════════════
 
+LAST_RUN_FILE = Path(".last_updated")
+
+
 def main() -> None:
     try:
         token   = get_token()
         headers = {"Authorization": f"Token {token}"}
+
+        # ── Quick check: has QFieldCloud data changed since our last run? ──
+        last_updated = get_last_updated(headers)
+        log.info("QFieldCloud last updated: %s", last_updated)
+
+        prev = LAST_RUN_FILE.read_text().strip() if LAST_RUN_FILE.exists() else ""
+        if last_updated and last_updated == prev:
+            log.info("No new data since last run — nothing to do.")
+            return
 
         download_gpkg(headers)
 
@@ -301,6 +327,10 @@ def main() -> None:
                 parcels, points, lines,
             )
             upload_gpkg(headers)
+
+        # ── Save timestamp so next run can skip if nothing changed ──────────
+        if last_updated:
+            LAST_RUN_FILE.write_text(last_updated)
 
         log.info("Done.")
 
