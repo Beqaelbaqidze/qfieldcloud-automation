@@ -25,7 +25,8 @@ jobs:
 
     env:
       # ── Required secrets (set in GitHub → Settings → Secrets → Actions) ──
-      QFIELDCLOUD_TOKEN:      ${{ secrets.QFIELDCLOUD_TOKEN }}
+      QFIELDCLOUD_USERNAME:   ${{ secrets.QFIELDCLOUD_USERNAME }}
+      QFIELDCLOUD_PASSWORD:   ${{ secrets.QFIELDCLOUD_PASSWORD }}
       QFIELDCLOUD_PROJECT_ID: ${{ secrets.QFIELDCLOUD_PROJECT_ID }}
 
       # ── Optional overrides (hard-coded here; override via repository vars) ─
@@ -65,8 +66,12 @@ jobs:
       # ── 5. Validate secrets are present before running ───────────────────
       - name: Validate required secrets
         run: |
-          if [ -z "$QFIELDCLOUD_TOKEN" ]; then
-            echo "::error::Secret QFIELDCLOUD_TOKEN is not set."
+          if [ -z "$QFIELDCLOUD_USERNAME" ]; then
+            echo "::error::Secret QFIELDCLOUD_USERNAME is not set."
+            exit 1
+          fi
+          if [ -z "$QFIELDCLOUD_PASSWORD" ]; then
+            echo "::error::Secret QFIELDCLOUD_PASSWORD is not set."
             exit 1
           fi
           if [ -z "$QFIELDCLOUD_PROJECT_ID" ]; then

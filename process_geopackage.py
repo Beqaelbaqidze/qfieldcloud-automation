@@ -6,7 +6,8 @@ Downloads a GeoPackage from a QFieldCloud project, converts polygon
 boundaries to a lines layer, then uploads the updated file back.
 
 Environment variables (set as GitHub Secrets):
-  QFIELDCLOUD_TOKEN       – API token generated in QFieldCloud account settings
+  QFIELDCLOUD_USERNAME    – Your QFieldCloud login email / username
+  QFIELDCLOUD_PASSWORD    – Your QFieldCloud password
   QFIELDCLOUD_PROJECT_ID  – Project UUID from the QFieldCloud project URL
   QFIELDCLOUD_URL         – (optional) Base URL, default: https://app.qfield.cloud
   GPKG_FILENAME           – (optional) Remote file path, default: project.gpkg
@@ -33,26 +34,43 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Configuration (from environment / GitHub Secrets) ─────────────────────────
-QFIELDCLOUD_URL   = os.environ.get("QFIELDCLOUD_URL", "https://app.qfield.cloud")
-QFIELDCLOUD_TOKEN = os.environ["QFIELDCLOUD_TOKEN"]        # required
-PROJECT_ID        = os.environ["QFIELDCLOUD_PROJECT_ID"]   # required
-GPKG_FILENAME     = os.environ.get("GPKG_FILENAME", "project.gpkg")
-POLYGON_LAYER     = os.environ.get("POLYGON_LAYER_NAME", "polygons")
-LINES_LAYER       = os.environ.get("LINES_LAYER_NAME", "polygon_boundaries")
+QFIELDCLOUD_URL      = os.environ.get("QFIELDCLOUD_URL", "https://app.qfield.cloud")
+QFIELDCLOUD_USERNAME = os.environ["QFIELDCLOUD_USERNAME"]   # required
+QFIELDCLOUD_PASSWORD = os.environ["QFIELDCLOUD_PASSWORD"]   # required
+PROJECT_ID           = os.environ["QFIELDCLOUD_PROJECT_ID"] # required
+GPKG_FILENAME        = os.environ.get("GPKG_FILENAME", "project.gpkg")
+POLYGON_LAYER        = os.environ.get("POLYGON_LAYER_NAME", "polygons")
+LINES_LAYER          = os.environ.get("LINES_LAYER_NAME", "polygon_boundaries")
 
 LOCAL_GPKG = Path("project.gpkg")
 API_BASE   = f"{QFIELDCLOUD_URL.rstrip('/')}/api/v1"
-HEADERS    = {"Authorization": f"Token {QFIELDCLOUD_TOKEN}"}
 
 
 # ── QFieldCloud API helpers ───────────────────────────────────────────────────
 
-def download_gpkg() -> None:
+def get_token() -> str:
+    """Authenticate with username/password and return a session token."""
+    url = f"{API_BASE}/auth/token/"
+    log.info("Authenticating as '%s' …", QFIELDCLOUD_USERNAME)
+    resp = requests.post(
+        url,
+        json={"username": QFIELDCLOUD_USERNAME, "password": QFIELDCLOUD_PASSWORD},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    token = resp.json().get("token")
+    if not token:
+        raise ValueError(f"No token in auth response: {resp.text}")
+    log.info("Authentication successful.")
+    return token
+
+
+def download_gpkg(headers: dict) -> None:
     """Stream the GeoPackage file from QFieldCloud to disk."""
     url = f"{API_BASE}/files/{PROJECT_ID}/{GPKG_FILENAME}/"
     log.info("Downloading '%s' from project %s …", GPKG_FILENAME, PROJECT_ID)
 
-    with requests.get(url, headers=HEADERS, stream=True, timeout=120) as resp:
+    with requests.get(url, headers=headers, stream=True, timeout=120) as resp:
         resp.raise_for_status()
         with LOCAL_GPKG.open("wb") as fh:
             for chunk in resp.iter_content(chunk_size=8_192):
@@ -62,7 +80,7 @@ def download_gpkg() -> None:
     log.info("Download complete — %.1f KB saved to %s", size_kb, LOCAL_GPKG)
 
 
-def upload_gpkg() -> None:
+def upload_gpkg(headers: dict) -> None:
     """Upload the processed GeoPackage back to QFieldCloud."""
     url = f"{API_BASE}/files/{PROJECT_ID}/{GPKG_FILENAME}/"
     log.info("Uploading '%s' to project %s …", GPKG_FILENAME, PROJECT_ID)
@@ -70,7 +88,7 @@ def upload_gpkg() -> None:
     with LOCAL_GPKG.open("rb") as fh:
         resp = requests.post(
             url,
-            headers=HEADERS,
+            headers=headers,
             files={"file": (GPKG_FILENAME, fh, "application/geopackage+sqlite3")},
             timeout=180,
         )
@@ -201,9 +219,11 @@ def process_gpkg() -> None:
 
 def main() -> None:
     try:
-        download_gpkg()
+        token   = get_token()
+        headers = {"Authorization": f"Token {token}"}
+        download_gpkg(headers)
         process_gpkg()
-        upload_gpkg()
+        upload_gpkg(headers)
         log.info("All done.")
     except requests.HTTPError as exc:
         log.error(
